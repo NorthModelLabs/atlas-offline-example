@@ -81,7 +81,7 @@ while (true) {
 
 ## Mode 2: Text + Image → Video
 
-Atlas handles TTS + lip-sync. You provide text and a face image — one endpoint, one job.
+Atlas handles TTS (ElevenLabs) + lip-sync. You provide text and a face image — one endpoint, one job. GPT-4o analyzes the face and picks the best matching voice automatically.
 
 **Endpoint:** `POST /v1/tts/generate-video`
 

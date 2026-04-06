@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
+
+const SHOWCASE_FACES = Array.from({ length: 74 }, (_, i) => ({
+  id: i + 1,
+  src: `/faces/${i + 1}.jpg`,
+}));
 
 type Mode = "text" | "audio" | "elevenlabs";
 
 const MODES: { id: Mode; label: string; desc: string }[] = [
-  { id: "text", label: "Text → Video", desc: "Atlas handles TTS + lip-sync" },
+  { id: "text", label: "Text → Video", desc: "Atlas TTS (ElevenLabs) + GPT-4o voice matching" },
   { id: "audio", label: "Audio → Video", desc: "You provide your own audio" },
   { id: "elevenlabs", label: "ElevenLabs → Video", desc: "Your ElevenLabs key + Atlas lip-sync" },
 ];
@@ -134,9 +139,30 @@ export default function Home() {
   const [elKey, setElKey] = useState("");
   const [elVoice, setElVoice] = useState("");
 
+  const [loadingFaceId, setLoadingFaceId] = useState<number | null>(null);
+
   const faceRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleSelectShowcaseFace = useCallback(async (face: typeof SHOWCASE_FACES[number]) => {
+    setLoadingFaceId(face.id);
+    try {
+      const resp = await fetch(face.src);
+      const blob = await resp.blob();
+      const file = new File([blob], `face-${face.id}.jpg`, { type: "image/jpeg" });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      if (faceRef.current) {
+        faceRef.current.files = dt.files;
+      }
+      setFacePreview(URL.createObjectURL(file));
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingFaceId(null);
+    }
+  }, []);
 
   const generate = async () => {
     const face = faceRef.current?.files?.[0];
@@ -244,6 +270,30 @@ export default function Home() {
                 <input ref={faceRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={generating}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) setFacePreview(URL.createObjectURL(f)); }} />
               </label>
+              <div className="mt-3">
+                <span className="text-[11px] text-white/20 block mb-2">Or choose a reference face</span>
+                <div className="grid grid-cols-10 gap-1">
+                  {SHOWCASE_FACES.map((face) => (
+                    <button
+                      key={face.id}
+                      onClick={() => handleSelectShowcaseFace(face)}
+                      disabled={generating || loadingFaceId !== null}
+                      className={`relative aspect-square rounded-lg overflow-hidden border transition ${
+                        loadingFaceId === face.id
+                          ? "border-white/30 opacity-60"
+                          : "border-white/[0.06] hover:border-white/25"
+                      } ${generating ? "pointer-events-none opacity-30" : ""}`}
+                    >
+                      <img src={face.src} alt={`Face ${face.id}`} className="w-full h-full object-cover" loading="lazy" />
+                      {loadingFaceId === face.id && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                          <div className="w-3 h-3 rounded-full border border-white/30 border-t-white/80 animate-spin" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Text / Script */}
@@ -256,10 +306,10 @@ export default function Home() {
               </div>
             )}
 
-            {/* Voice design */}
+            {/* Voice preference */}
             {mode === "text" && (
               <div>
-                <label className="text-[12px] text-white/40 mb-2 block">Voice design <span className="text-white/15">(optional)</span></label>
+                <label className="text-[12px] text-white/40 mb-2 block">Voice preference <span className="text-white/15">(optional)</span></label>
                 <input value={voice} onChange={(e) => setVoice(e.target.value)}
                   placeholder="e.g. warm, professional, male" disabled={generating} className={inputCls} />
               </div>
