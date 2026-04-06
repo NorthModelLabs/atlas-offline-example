@@ -68,14 +68,23 @@ export async function POST(req: NextRequest) {
 
     } else {
       const text = (form.get("text") as string)?.trim();
-      const voice = (form.get("voice") as string)?.trim() || "";
+      const voice = (form.get("voice") as string)?.trim() || "JBFqnCBsd6RMkjVDRZzb";
       if (!text) return NextResponse.json({ error: "Text is required." }, { status: 400 });
 
+      const elKey = process.env.ELEVENLABS_API_KEY;
+      if (!elKey) return NextResponse.json({ error: "ELEVENLABS_API_KEY not configured." }, { status: 503 });
+
+      const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}`, {
+        method: "POST",
+        headers: { "xi-api-key": elKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+      });
+      if (!ttsRes.ok) return NextResponse.json({ error: "ElevenLabs TTS failed.", detail: await ttsRes.text().catch(() => "") }, { status: 502 });
+
       const up = new FormData();
+      up.append("audio", new File([await ttsRes.arrayBuffer()], "tts.mp3", { type: "audio/mpeg" }));
       up.append("image", image);
-      const h: Record<string, string> = { text, language: "Auto" };
-      if (voice) h.instruct = voice;
-      const res = await atlas("/v1/tts/generate-video", { method: "POST", headers: h, body: up });
+      const res = await atlas("/v1/generate", { method: "POST", body: up });
       if (!res.ok) return NextResponse.json({ error: "Submit failed.", detail: await res.text().catch(() => "") }, { status: 502 });
       jobId = (await res.json()).job_id;
     }

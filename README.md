@@ -13,7 +13,7 @@ npm run dev
 ## How It Works
 
 ```
-POST /v1/generate (or /v1/tts/generate-video)
+POST /v1/generate
   → 202 { job_id }
 
 GET /v1/jobs/{id}
@@ -79,45 +79,56 @@ while (true) {
 
 ---
 
-## Mode 2: Text + Image → Video
+## Mode 2: Text + Image → Video (via ElevenLabs)
 
-Atlas handles TTS (ElevenLabs) + lip-sync. You provide text and a face image — one endpoint, one job. GPT-4o analyzes the face and picks the best matching voice automatically.
+Generate speech with ElevenLabs, then send audio + face to Atlas for lip-sync. Same two-step pattern as Mode 1, using a specific ElevenLabs voice ID.
 
-**Endpoint:** `POST /v1/tts/generate-video`
+**Endpoints:** ElevenLabs TTS → `POST /v1/generate`
 
 ```javascript
+// Step 1: Generate speech with ElevenLabs
+const voiceId = "JBFqnCBsd6RMkjVDRZzb"; // George — or any voice ID
+const tts = await fetch(
+  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+  {
+    method: "POST",
+    headers: {
+      "xi-api-key": "YOUR_ELEVENLABS_KEY",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: "Hello, welcome to our demo.",
+      model_id: "eleven_multilingual_v2",
+    }),
+  },
+);
+const audioBlob = await tts.blob();
+
+// Step 2: Send audio + face to Atlas
 const form = new FormData();
+form.append("audio", audioBlob, "speech.mp3");
 form.append("image", faceImage);
 
-const res = await fetch("https://api.atlasv1.com/v1/tts/generate-video", {
+const res = await fetch("https://api.atlasv1.com/v1/generate", {
   method: "POST",
-  headers: {
-    authorization: "Bearer YOUR_API_KEY",
-    text: "Hello, welcome to our demo.",
-    language: "Auto",
-    instruct: "warm, professional, male",
-  },
+  headers: { authorization: "Bearer YOUR_API_KEY" },
   body: form,
 });
 
 const { job_id } = await res.json();
 
-// Poll until done — presigned URL included in response
+// Step 3: Poll — presigned URL included in response
 let videoUrl;
 while (true) {
   const job = await fetch(`https://api.atlasv1.com/v1/jobs/${job_id}`, {
     headers: { authorization: "Bearer YOUR_API_KEY" },
   }).then(r => r.json());
 
-  if (job.status === "completed") {
-    videoUrl = job.url;  // presigned S3 URL, no auth needed
-    break;
-  }
+  if (job.status === "completed") { videoUrl = job.url; break; }
   if (job.status === "failed") throw new Error(job.error);
   await new Promise(r => setTimeout(r, 3000));
 }
 
-// Use directly
 console.log(videoUrl);
 ```
 
@@ -167,6 +178,7 @@ console.log(videoUrl);
 |---|---|---|
 | `ATLAS_API_URL` | Yes | Atlas API base URL (`https://api.atlasv1.com`) |
 | `ATLAS_API_KEY` | Yes | Your Atlas API key (`ak_...`) |
+| `ELEVENLABS_API_KEY` | For Text mode | ElevenLabs API key (server-side TTS) |
 
 ## API Response
 

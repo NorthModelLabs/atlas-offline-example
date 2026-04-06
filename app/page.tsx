@@ -10,32 +10,47 @@ const SHOWCASE_FACES = Array.from({ length: 74 }, (_, i) => ({
 type Mode = "text" | "audio" | "elevenlabs";
 
 const MODES: { id: Mode; label: string; desc: string }[] = [
-  { id: "text", label: "Text → Video", desc: "Atlas TTS (ElevenLabs) + GPT-4o voice matching" },
+  { id: "text", label: "Text → Video", desc: "ElevenLabs TTS + Atlas lip-sync (server-side key)" },
   { id: "audio", label: "Audio → Video", desc: "You provide your own audio" },
   { id: "elevenlabs", label: "ElevenLabs → Video", desc: "Your ElevenLabs key + Atlas lip-sync" },
 ];
 
 const CODE_SNIPPETS: Record<Mode, string> = {
-  text: `// POST /v1/tts/generate-video
-// Text + face image → Atlas TTS + lip-sync → MP4
+  text: `// ElevenLabs TTS → Atlas /v1/generate
+// Text → ElevenLabs voice → Atlas lip-sync → MP4
 
+// Step 1: Generate speech with ElevenLabs
+const voiceId = "JBFqnCBsd6RMkjVDRZzb"; // George — or any voice ID
+const tts = await fetch(
+  \`https://api.elevenlabs.io/v1/text-to-speech/\${voiceId}\`,
+  {
+    method: "POST",
+    headers: {
+      "xi-api-key": "YOUR_ELEVENLABS_KEY",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      text: "Hello, welcome to our demo.",
+      model_id: "eleven_multilingual_v2",
+    }),
+  },
+);
+const audioBlob = await tts.blob();
+
+// Step 2: Send audio + face to Atlas
 const form = new FormData();
+form.append("audio", audioBlob, "speech.mp3");
 form.append("image", faceImage);
 
-const res = await fetch("https://api.atlasv1.com/v1/tts/generate-video", {
+const res = await fetch("https://api.atlasv1.com/v1/generate", {
   method: "POST",
-  headers: {
-    authorization: "Bearer YOUR_API_KEY",
-    text: "Hello, welcome to our demo.",
-    language: "Auto",
-    instruct: "warm, professional, male",
-  },
+  headers: { authorization: "Bearer YOUR_API_KEY" },
   body: form,
 });
 
 const { job_id } = await res.json();
 
-// Poll until done — presigned URL included in response
+// Step 3: Poll — presigned URL included in response
 let videoUrl;
 while (true) {
   const job = await fetch(\`/v1/jobs/\${job_id}\`, { headers }).then(r => r.json());
@@ -47,8 +62,6 @@ while (true) {
   await new Promise(r => setTimeout(r, 3000));
 }
 
-// videoUrl is a time-limited presigned S3 URL
-// Use directly in <video src>, download links, etc.
 console.log(videoUrl);`,
 
   audio: `// POST /v1/generate
@@ -309,9 +322,9 @@ export default function Home() {
             {/* Voice preference */}
             {mode === "text" && (
               <div>
-                <label className="text-[12px] text-white/40 mb-2 block">Voice preference <span className="text-white/15">(optional)</span></label>
+                <label className="text-[12px] text-white/40 mb-2 block">ElevenLabs Voice ID <span className="text-white/15">(optional)</span></label>
                 <input value={voice} onChange={(e) => setVoice(e.target.value)}
-                  placeholder="e.g. warm, professional, male" disabled={generating} className={inputCls} />
+                  placeholder="JBFqnCBsd6RMkjVDRZzb" disabled={generating} className={inputCls} />
               </div>
             )}
 
@@ -371,7 +384,7 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto p-6">
               <div className="flex items-center justify-between mb-4">
                 <span className="text-[11px] text-white/25 font-mono">
-                  {mode === "text" ? "/v1/tts/generate-video" : "/v1/generate"}
+                  /v1/generate
                 </span>
                 <span className="text-[10px] text-white/15 px-2 py-0.5 rounded bg-white/[0.04]">JavaScript</span>
               </div>
